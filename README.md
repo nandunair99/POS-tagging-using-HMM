@@ -292,3 +292,24 @@ ChatGPT was used to get the definition of various language specific tags which a
 
 Show all the POS tags used in the language Hindi.
 Translate the following text from hindi to english.
+
+# Implementation of the Requests
+
+**Evaluate tagged corpus**
+
+Counted the no. of unique Tokens present in the corpus
+Counted the no. of unique POS Tags present in the corpus
+
+**Split corpus into train and test sentences**
+
+Split the total no. of sentences into training and testing sets with 70:30 ratio
+
+**Create HMM PoS-tagger**
+
+Created functions for computing the Transition and Emission probabilities for the tokens from training set. 
+Implemented the Viterbi algorithm to choose the tags with the highest transition and emission probabilities as the most probable POS tag.
+
+ **Show accuracy of the PoS-tagger**
+Calculated the accuracy of the predicted POS tags by comparing with actual POS tags.
+
+

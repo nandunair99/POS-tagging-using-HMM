@@ -1,6 +1,5 @@
 scikit-learn
 pandas
 numpy
-seaborn
-matplotlib
 time
+nltk

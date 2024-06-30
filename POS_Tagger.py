@@ -1,147 +1,191 @@
 import random
-from util.utility_methods import conllu_to_pos
-from sklearn.model_selection import train_test_split
+import time
 import numpy as np
 import pandas as pd
-import time
 from nltk.tokenize import word_tokenize
+from sklearn.model_selection import train_test_split
+from util.utility_methods import conllu_to_pos
 
-input_file = 'train_data\\train_data.conllu'
-test_file = 'test_data\\test_data2.txt'
-
-# reading a few sentences i.e. is a list of (word, pos) tuples
-sentences = conllu_to_pos(input_file)
-print("--------Printing a few sentences from the corpus--------")
-print(sentences[:3])
-print("--------------------------------------------------------")
-
-
-# Splitting into train and test
-random.seed(123)
-train_set, test_set = train_test_split(sentences, test_size=0.3)
-print("No. of sentences in training set", len(train_set))
-print("No. of sentences in testing set", len(test_set))
-
-# Getting list of tagged words
-train_tagged_words = [tup for sent in train_set for tup in sent]
-
-print("---------------Exploratory Data Analysis---------------")
-# tokens
-tokens = [pair[0] for pair in train_tagged_words]
-# vocabulary
-V = set(tokens)
-print("No. of unique tokens in the corpus: ", len(V))
-# number of tags
-T = set([pair[1] for pair in train_tagged_words])
-print("No. of unique tags in the corpus: ", len(T))
-print("--------------------------------------------------------")
+# Constants
+INPUT_FILE = 'train_data\\train_data.conllu'
+TEST_FILE = 'test_data\\test_data.txt'
+OUTPUT_FILE = 'test_data\\output.txt'
+SEED = 123
 
 
-# computing P(w/t) and storing in T x V matrix
-t = len(T)
-v = len(V)
-w_given_t = np.zeros((t, v))
+def load_sentences(input_file):
+    """Load sentences from a CoNLL-U formatted file."""
+    return conllu_to_pos(input_file)
 
 
-# compute word given tag: Emission Probability
-def word_given_tag(word, tag, train_bag=train_tagged_words):
-    tag_list = [pair for pair in train_bag if pair[1] == tag]
-    count_tag = len(tag_list)
-    w_given_tag_list = [pair[0] for pair in tag_list if pair[0] == word]
-    count_w_given_tag = len(w_given_tag_list)
+def split_data(sentences, test_size=0.3, seed=123):
+    """Split sentences into training and testing sets."""
+    random.seed(seed)
+    return train_test_split(sentences, test_size=test_size)
 
-    return (count_w_given_tag, count_tag)
 
-# compute tag given tag: tag2(t2) given tag1 (t1), i.e. Transition Probability
-def t2_given_t1(t2, t1, train_bag=train_tagged_words):
-    tags = [pair[1] for pair in train_bag]
-    count_t1 = len([t for t in tags if t == t1])
-    count_t2_t1 = 0
-    for index in range(len(tags) - 1):
-        if tags[index] == t1 and tags[index + 1] == t2:
-            count_t2_t1 += 1
-    return (count_t2_t1, count_t1)
+def exploratory_data_analysis(train_tagged_words):
+    """Perform exploratory data analysis."""
+    tokens = [pair[0] for pair in train_tagged_words]
+    vocabulary = set(tokens)
+    tags = set(pair[1] for pair in train_tagged_words)
 
-# creating t x t transition matrix of tags
-# each column is t2, each row is t1
-# thus M(i, j) represents P(tj given ti)
-tags_matrix = np.zeros((len(T), len(T)), dtype='float32')
-for i, t1 in enumerate(list(T)):
-    for j, t2 in enumerate(list(T)):
-        tags_matrix[i, j] = t2_given_t1(t2, t1)[0] / t2_given_t1(t2, t1)[1]
+    print("---------------Exploratory Data Analysis---------------")
+    print("No. of unique tokens in the corpus:", len(vocabulary))
+    print("No. of unique tags in the corpus:", len(tags))
+    print("--------------------------------------------------------")
 
-print(tags_matrix)
+    return vocabulary, tags
 
-# convert the matrix to a df for better readability
-tags_df = pd.DataFrame(tags_matrix, columns=list(T), index=list(T))
 
-# Viterbi Heuristic
-def Viterbi(words, train_bag=train_tagged_words):
+def compute_emission_probabilities(train_tagged_words):
+    """Compute emission probabilities P(w|t)."""
+    emission_counts = {}
+    tag_counts = {}
+
+    for word, tag in train_tagged_words:
+        if tag not in emission_counts:
+            emission_counts[tag] = {}
+        if word not in emission_counts[tag]:
+            emission_counts[tag][word] = 0
+        emission_counts[tag][word] += 1
+
+        if tag not in tag_counts:
+            tag_counts[tag] = 0
+        tag_counts[tag] += 1
+
+    return emission_counts, tag_counts
+
+
+def word_given_tag(word, tag, emission_counts, tag_counts):
+    """Return the count of word given tag and the count of the tag."""
+    return emission_counts.get(tag, {}).get(word, 0), tag_counts.get(tag, 0)
+
+
+def compute_transition_probabilities(train_tagged_words):
+    """Compute transition probabilities P(t2|t1)."""
+    transition_counts = {}
+    tag_counts = {}
+    tags = [pair[1] for pair in train_tagged_words]
+
+    for i in range(len(tags) - 1):
+        t1 = tags[i]
+        t2 = tags[i + 1]
+
+        if t1 not in transition_counts:
+            transition_counts[t1] = {}
+        if t2 not in transition_counts[t1]:
+            transition_counts[t1][t2] = 0
+        transition_counts[t1][t2] += 1
+
+        if t1 not in tag_counts:
+            tag_counts[t1] = 0
+        tag_counts[t1] += 1
+
+    return transition_counts, tag_counts
+
+
+def create_transition_matrix(tags, transition_counts, tag_counts):
+    """Create a transition matrix for tags."""
+    tags_matrix = np.zeros((len(tags), len(tags)), dtype='float32')
+    tag_list = list(tags)
+
+    for i, t1 in enumerate(tag_list):
+        for j, t2 in enumerate(tag_list):
+            count_t2_t1, count_t1 = transition_counts.get(t1, {}).get(t2, 0), tag_counts.get(t1, 0)
+            tags_matrix[i, j] = count_t2_t1 / count_t1 if count_t1 != 0 else 0
+
+    return pd.DataFrame(tags_matrix, columns=tag_list, index=tag_list)
+
+
+def viterbi_algorithm(words, tags_df, emission_counts, tag_counts, start_tag='SYM'):
+    """Implement the Viterbi algorithm for POS tagging."""
     state = []
-    T = list(set([pair[1] for pair in train_bag]))
+    tag_list = list(tags_df.columns)
 
     for key, word in enumerate(words):
-        # initialise list of probability column for a given observation
         p = []
-        for tag in T:
+        for tag in tag_list:
             if key == 0:
-                transition_p = tags_df.loc['SYM', tag]
+                transition_p = tags_df.loc[start_tag, tag]
             else:
                 transition_p = tags_df.loc[state[-1], tag]
 
-            # compute emission and state probabilities
-            emission_p = word_given_tag(words[key], tag)[0] / word_given_tag(words[key], tag)[1]
+            emission_p, count_tag = word_given_tag(word, tag, emission_counts, tag_counts)
+            emission_p = emission_p / count_tag if count_tag != 0 else 0
             state_probability = emission_p * transition_p
             p.append(state_probability)
 
         pmax = max(p)
-        # getting state for which probability is maximum
-        state_max = T[p.index(pmax)]
+        state_max = tag_list[p.index(pmax)]
         state.append(state_max)
+
     return list(zip(words, state))
 
 
-# Running on entire test dataset would take more than 3-4hrs.
-# Let's test our Viterbi algorithm on a few sample sentences of test dataset
+def main():
+    # Load sentences
+    sentences = load_sentences(INPUT_FILE)
+    print("--------Printing a few sentences from the corpus--------")
+    print(sentences[:3])
+    print("--------------------------------------------------------")
 
-random.seed(1234)
+    # Split data into training and testing sets
+    train_set, test_set = split_data(sentences, test_size=0.3, seed=SEED)
+    print("No. of sentences in training set:", len(train_set))
+    print("No. of sentences in testing set:", len(test_set))
 
-# choose random 5 sents
-rndom = [random.randint(1, len(test_set)) for x in range(5)]
-# list of sents
-test_run = [test_set[i] for i in rndom]
-# list of tagged words
-test_run_base = [tup for sent in test_run for tup in sent]
-# list of untagged words
-test_tagged_words = [tup[0] for sent in test_run for tup in sent]
+    # Get list of tagged words from training set
+    train_tagged_words = [tup for sent in train_set for tup in sent]
 
-print("-----Displaying test sentences with Actual Tagging-----")
-print(test_run)
-print("-------------------------------------------------------")
+    # Exploratory data analysis
+    vocabulary, tags = exploratory_data_analysis(train_tagged_words)
 
-# tagging the test sentences
-start = time.time()
-tagged_seq = Viterbi(test_tagged_words)
-end = time.time()
-difference = end - start
-print("Time taken in seconds: ", difference)
-print("-----Displaying test sentences with Actual Tagging------")
-print(tagged_seq)
-print("--------------------------------------------------------")
+    # Compute emission and transition probabilities
+    emission_counts, tag_counts = compute_emission_probabilities(train_tagged_words)
+    transition_counts, tag_counts = compute_transition_probabilities(train_tagged_words)
 
-# accuracy
-check = [i for i, j in zip(tagged_seq, test_run_base) if i == j]
-accuracy = len(check) / len(tagged_seq)
-print("--------------Accuracy of the PoS-tagger----------------")
-print(accuracy)
-print("--------------------------------------------------------")
+    # Create transition matrix
+    tags_df = create_transition_matrix(tags, transition_counts, tag_counts)
 
-## Testing
-print("-----------Testing with another test sentence----------")
-with open(test_file, 'r', encoding='utf-8') as infile:
-    for line in infile:
-        words = word_tokenize(line)
-        start = time.time()
-        tagged_seq = Viterbi(words)
-        print(tagged_seq)
-print("--------------------------------------------------------")
+    # Test Viterbi algorithm on sample sentences
+    random.seed(1234)
+    test_sample_indices = [random.randint(1, len(test_set)) for _ in range(5)]
+    test_samples = [test_set[i] for i in test_sample_indices]
+    test_sample_words = [tup[0] for sent in test_samples for tup in sent]
+    test_sample_tags = [tup for sent in test_samples for tup in sent]
+
+    print("-----Displaying test sentences with Actual Tagging-----")
+    print(test_samples)
+    print("-------------------------------------------------------")
+
+    start = time.time()
+    tagged_sequence = viterbi_algorithm(test_sample_words, tags_df, emission_counts, tag_counts)
+    end = time.time()
+
+    print("Time taken in seconds:", end - start)
+    print("-----Displaying test sentences with Predicted Tagging------")
+    print(tagged_sequence)
+    print("--------------------------------------------------------")
+
+    # Calculate accuracy
+    correct_predictions = [i for i, j in zip(tagged_sequence, test_sample_tags) if i == j]
+    accuracy = len(correct_predictions) / len(tagged_sequence)
+    print("--------------Accuracy of the PoS-tagger----------------")
+    print(accuracy)
+    print("--------------------------------------------------------")
+
+    # Test on new sentences from the test file
+    print("-----------Testing with another test sentence----------")
+    with open(TEST_FILE, 'r', encoding='utf-8') as infile, open(OUTPUT_FILE, 'w', encoding='utf-8') as outfile:
+        for line in infile:
+            words = word_tokenize(line)
+            tagged_sequence = viterbi_algorithm(words, tags_df, emission_counts, tag_counts)
+            print(tagged_sequence)
+            tagged_sequence_str = ' '.join([f"{word}/{tag}" for word, tag in tagged_sequence])
+            outfile.write(tagged_sequence_str + '\n')
+    print("--------------------------------------------------------")
+
+
+if __name__ == "__main__":
+    main()

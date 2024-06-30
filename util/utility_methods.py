@@ -1,5 +1,3 @@
-
-
 def conllu_to_pos(input_file):
     sentences = []
     current_sentence = []
@@ -19,7 +17,7 @@ def conllu_to_pos(input_file):
 
     # Handle the case where the last sentence does not end with '।'
     if current_sentence:
-       sentences.append(current_sentence)
+        sentences.append(current_sentence)
 
     # # Write the result to the output file
     # with open(output_file, 'w', encoding='utf-8') as outfile:

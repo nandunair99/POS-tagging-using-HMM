@@ -1,5 +1,3 @@
-**Nandakrishnan, Nair, 12402313**
-
 **POS-Tagger for Hindi Language**
 
 # Project Description
